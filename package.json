@@ -1,0 +1,41 @@
+{
+  "name": "bg_removal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "jszip": "^3.10.2",
+    "lucide-react": "^1.46.0",
+    "next": "^14.2.35",
+    "onnxruntime-web": "^1.21.0-dev.20250206-d981b153d3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/jszip": "^3.4.0",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.24",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3"
+  }
+}
