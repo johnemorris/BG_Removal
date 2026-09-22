@@ -7,7 +7,11 @@ import {
   Undo, 
   RotateCcw, 
   Check, 
-  X 
+  X,
+  Eye,
+  EyeOff,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 
 interface BrushEditorModalProps {
@@ -25,8 +29,12 @@ export const BrushEditorModal: React.FC<BrushEditorModalProps> = ({
   cutoutUrl,
   onApplyChanges,
 }) => {
-  const [tool, setTool] = useState<'erase' | 'restore'>('erase');
+  const [tool, setTool] = useState<'erase' | 'restore'>('restore');
   const [brushSize, setBrushSize] = useState(25);
+  const [showGhost, setShowGhost] = useState(true);
+  const [ghostOpacity, setGhostOpacity] = useState(0.4);
+  const [zoom, setZoom] = useState(1);
+  const [isPeekingOriginal, setIsPeekingOriginal] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const originalImgRef = useRef<HTMLImageElement | null>(null);
@@ -66,9 +74,24 @@ export const BrushEditorModal: React.FC<BrushEditorModalProps> = ({
       if (e.key === 'Escape' && isOpen) {
         onClose();
       }
+      // Hold Spacebar to temporarily peek at original photo
+      if (e.code === 'Space' && isOpen && !e.repeat) {
+        setIsPeekingOriginal(true);
+      }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsPeekingOriginal(false);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [isOpen, onClose]);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -215,7 +238,7 @@ export const BrushEditorModal: React.FC<BrushEditorModalProps> = ({
           </div>
 
           {/* Brush Size */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <span className="text-slate-400 font-medium">Size:</span>
             <input
               type="range"
@@ -223,10 +246,94 @@ export const BrushEditorModal: React.FC<BrushEditorModalProps> = ({
               max="80"
               value={brushSize}
               onChange={(e) => setBrushSize(parseInt(e.target.value))}
-              className="w-32 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+              className="w-24 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
             />
             <span className="w-8 font-mono text-teal-300 font-bold">{brushSize}px</span>
           </div>
+
+          {/* Ghost Image (Original Underlay) Toggle & Opacity */}
+          <div className="flex items-center space-x-2 bg-white/5 border border-white/10 rounded-xl px-2.5 py-1">
+            <button
+              onClick={() => setShowGhost(!showGhost)}
+              className={`flex items-center space-x-1.5 px-2 py-1 rounded-lg font-semibold transition-all ${
+                showGhost 
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Toggle ghost view of original image"
+            >
+              {showGhost ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              <span>Ghost Original</span>
+            </button>
+            {showGhost && (
+              <div className="flex items-center space-x-1.5 pl-1.5 border-l border-white/10">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="0.8"
+                  step="0.05"
+                  value={ghostOpacity}
+                  onChange={(e) => setGhostOpacity(parseFloat(e.target.value))}
+                  className="w-16 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                  title="Ghost opacity"
+                />
+                <span className="text-[10px] font-mono text-teal-300 font-semibold w-7">
+                  {Math.round(ghostOpacity * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center space-x-1 bg-white/5 border border-white/10 rounded-xl p-0.5">
+            <button
+              onClick={() => setZoom(prev => Math.max(0.5, prev - 0.25))}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11px] font-mono font-bold text-teal-300 px-1.5">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom(prev => Math.min(3, prev + 0.25))}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
+              title="Zoom In"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            {zoom !== 1 && (
+              <button
+                onClick={() => setZoom(1)}
+                className="px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-teal-300 rounded hover:bg-white/10 font-mono"
+                title="Reset Zoom"
+              >
+                1:1
+              </button>
+            )}
+          </div>
+
+          {/* Quick Peek Original (Hold button, Spacebar, or Right-Click) */}
+          <button
+            onMouseDown={() => setIsPeekingOriginal(true)}
+            onMouseUp={() => setIsPeekingOriginal(false)}
+            onMouseLeave={() => setIsPeekingOriginal(false)}
+            onTouchStart={() => setIsPeekingOriginal(true)}
+            onTouchEnd={() => setIsPeekingOriginal(false)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border font-semibold select-none transition-all ${
+              isPeekingOriginal
+                ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-[0_0_15px_rgba(251,191,36,0.4)]'
+                : 'text-slate-300 border-white/10 bg-white/5 hover:text-white hover:bg-white/10'
+            }`}
+            title="Press and hold to view original photo (or hold Spacebar / right-click canvas)"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Hold to Peek Original</span>
+            <kbd className="hidden sm:inline-block px-1 py-0.2 text-[9px] bg-white/10 rounded font-mono text-slate-400">
+              Space
+            </kbd>
+          </button>
 
           {/* History */}
           <div className="flex items-center space-x-2">
@@ -251,22 +358,68 @@ export const BrushEditorModal: React.FC<BrushEditorModalProps> = ({
 
         {/* Viewport */}
         <div className="flex-1 overflow-auto p-6 bg-studio-950 flex items-center justify-center min-h-[380px]">
-          <div className="relative bg-transparency-grid rounded-xl shadow-2xl overflow-hidden cursor-crosshair border border-white/10">
+          <div 
+            className="relative bg-transparency-grid rounded-xl shadow-2xl overflow-hidden cursor-crosshair border border-white/10 transition-transform duration-100 ease-out"
+            style={{ transform: `scale(${zoom})` }}
+            onContextMenu={(e) => {
+              e.preventDefault(); // Prevent default browser context menu
+            }}
+            onMouseDown={(e) => {
+              if (e.button === 2) {
+                // Right click: peek original photo
+                e.preventDefault();
+                setIsPeekingOriginal(true);
+              }
+            }}
+            onMouseUp={(e) => {
+              if (e.button === 2) {
+                setIsPeekingOriginal(false);
+              }
+            }}
+          >
+            {/* Ghost layer of original un-cutout photo underneath */}
+            {(showGhost || isPeekingOriginal) && originalUrl && (
+              <img
+                src={originalUrl}
+                alt="Original Reference"
+                className={`absolute inset-0 w-full h-full object-contain pointer-events-none select-none transition-opacity duration-150 ${
+                  isPeekingOriginal ? 'z-20 opacity-100' : 'z-0'
+                }`}
+                style={{ opacity: isPeekingOriginal ? 1 : ghostOpacity }}
+                draggable={false}
+              />
+            )}
+
             <canvas
               ref={canvasRef}
-              onMouseDown={startDrawing}
-              onMouseUp={stopDrawing}
+              onMouseDown={(e) => {
+                if (e.button === 0) startDrawing(e);
+              }}
+              onMouseUp={(e) => {
+                if (e.button === 0) stopDrawing();
+                if (e.button === 2) setIsPeekingOriginal(false);
+              }}
               onMouseMove={draw}
-              onMouseLeave={stopDrawing}
-              className="max-h-[500px] w-auto object-contain block"
+              onMouseLeave={() => {
+                stopDrawing();
+                setIsPeekingOriginal(false);
+              }}
+              className="relative z-10 max-h-[500px] w-auto object-contain block"
             />
+
+            {/* Quick peek indicator overlay */}
+            {isPeekingOriginal && (
+              <div className="absolute top-3 left-3 z-30 px-2.5 py-1 rounded-lg bg-amber-400/90 text-slate-950 text-[10px] font-extrabold uppercase tracking-wider backdrop-blur-md shadow-lg pointer-events-none">
+                Original Photo Preview
+              </div>
+            )}
           </div>
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/10 bg-white/5 flex items-center justify-between">
           <span className="text-xs text-slate-400">
-            Click & paint to {tool === 'erase' ? 'erase pixels' : 'restore original pixels'}.
+            Click & drag to paint. <span className="text-slate-300 font-medium">Right-click</span> or hold <span className="text-slate-300 font-medium">Spacebar</span> to peek original photo.
           </span>
 
           <div className="flex items-center space-x-3">

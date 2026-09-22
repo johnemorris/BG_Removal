@@ -67,7 +67,7 @@ export async function removeBackground(
 
     // Pass hair defringe parameters
     const defringe = hairSettings ? hairSettings.defringe : 2;
-    const shift = hairSettings ? hairSettings.shift : -1;
+    const shift = hairSettings ? hairSettings.shift : 0;
     const feather = hairSettings ? hairSettings.feather : 0.5;
     const alphaMatting = hairSettings ? hairSettings.alphaMatting : false;
 

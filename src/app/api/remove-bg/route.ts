@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
       scriptPath,
       tempIn,
       tempOut,
+      '--model', 'isnet-general-use',
       '--defringe', defringe,
       '--shift', shift,
       '--feather', feather,

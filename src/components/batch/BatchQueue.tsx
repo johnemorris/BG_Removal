@@ -10,9 +10,17 @@ import {
   Clock, 
   AlertCircle, 
   Trash2, 
-  Archive 
+  Archive,
+  ShoppingBag,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 import { BackgroundPreset, COLOR_PRESETS } from '@/lib/constants/presets';
+import { 
+  MarketplacePreset, 
+  MARKETPLACE_PRESETS,
+  FILL_PRESET_OPTIONS 
+} from '@/lib/constants/marketplaces';
 import { removeBackground } from '@/lib/engine/bgRemoval';
 import { renderCompositedCanvas } from '@/lib/engine/shadowRenderer';
 import { exportBatchAsZip, ExportBatchFile } from '@/lib/engine/zipExporter';
@@ -37,7 +45,12 @@ interface BatchQueueProps {
 
 export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) => {
   const [items, setItems] = useState<BatchItem[]>([]);
+  const [batchMode, setBatchMode] = useState<'marketplace' | 'backdrop'>('marketplace');
   const [selectedPreset, setSelectedPreset] = useState<BackgroundPreset>(COLOR_PRESETS[1]);
+  const [selectedMarketplacePreset, setSelectedMarketplacePreset] = useState<MarketplacePreset>(MARKETPLACE_PRESETS[0]);
+  const [fillPercentage, setFillPercentage] = useState<number>(85);
+  const [autoCenter, setAutoCenter] = useState<boolean>(true);
+
   const [isProcessingAll, setIsProcessingAll] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,24 +80,58 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
     setItems([]);
   };
 
-  const processSingleItem = async (item: BatchItem, preset: BackgroundPreset): Promise<BatchItem> => {
+  const handleMarketplacePresetSelect = (preset: MarketplacePreset) => {
+    setSelectedMarketplacePreset(preset);
+    setFillPercentage(preset.fillPercentage);
+    setAutoCenter(true);
+  };
+
+  const processSingleItem = async (item: BatchItem): Promise<BatchItem> => {
     try {
       const result = await removeBackground(item.file);
+
+      let targetW = result.width;
+      let targetH = result.height;
+      let bg = selectedPreset;
+      let shadowSettings = {
+        enabled: true,
+        opacity: 0.35,
+        blur: 14,
+        angle: 90,
+        distance: 14,
+        color: '#000000',
+      };
+      let smartPadding = undefined;
+
+      if (batchMode === 'marketplace') {
+        targetW = selectedMarketplacePreset.width;
+        targetH = selectedMarketplacePreset.height;
+        bg = {
+          id: `batch-${selectedMarketplacePreset.id}`,
+          name: selectedMarketplacePreset.name,
+          type: 'color',
+          value: selectedMarketplacePreset.backgroundColor,
+          previewBg: selectedMarketplacePreset.backgroundColor,
+        };
+        shadowSettings = selectedMarketplacePreset.shadow;
+        smartPadding = {
+          enabled: true,
+          fillPercentage,
+          autoCenter,
+          canvasWidth: targetW,
+          canvasHeight: targetH,
+        };
+      }
+
       const canvas = await renderCompositedCanvas({
         cutoutUrl: result.cutoutDataUrl,
         originalUrl: result.originalDataUrl,
-        background: preset,
-        shadow: {
-          enabled: true,
-          opacity: 0.35,
-          blur: 14,
-          angle: 90,
-          distance: 14,
-          color: '#000000',
-        },
+        background: bg,
+        shadow: shadowSettings,
         blurOriginalBg: 0,
-        width: result.width,
-        height: result.height,
+        width: targetW,
+        height: targetH,
+        smartPadding,
       });
 
       const finalUrl = canvas.toDataURL('image/png');
@@ -94,8 +141,8 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
         progress: 100,
         cutoutUrl: result.cutoutDataUrl,
         finalUrl,
-        width: result.width,
-        height: result.height,
+        width: targetW,
+        height: targetH,
       };
     } catch (e) {
       console.error('Error processing item:', e);
@@ -118,7 +165,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
       updated[i] = { ...updated[i], status: 'processing', progress: 30 };
       setItems([...updated]);
 
-      const finished = await processSingleItem(updated[i], selectedPreset);
+      const finished = await processSingleItem(updated[i]);
       updated[i] = finished;
       setItems([...updated]);
 
@@ -140,7 +187,8 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
       dataUrl: item.finalUrl!,
     }));
 
-    await exportBatchAsZip(exportFiles, `clearcut-batch-${Date.now()}.zip`);
+    const prefix = batchMode === 'marketplace' ? `${selectedMarketplacePreset.platform}-catalog` : 'batch';
+    await exportBatchAsZip(exportFiles, `clearcut-${prefix}-${Date.now()}.zip`);
     setIsZipping(false);
   };
 
@@ -154,10 +202,10 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
           <div className="space-y-1">
             <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
               <Layers className="w-6 h-6 text-teal-400" />
-              Batch Background Processing
+              Batch Catalog Processing & Standardization
             </h2>
             <p className="text-xs text-slate-400">
-              Process up to 20 catalog images simultaneously with deep neural segmentation.
+              Process up to 20 product catalog shots at once with uniform marketplace compliance or custom backdrops.
             </p>
           </div>
 
@@ -202,39 +250,165 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
           </div>
         </div>
 
-        {/* Global Preset Selector for Batch */}
-        <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-300">
-              Apply Uniform Backdrop to Entire Batch:
-            </span>
-            <span className="text-teal-400 font-bold">{selectedPreset.name}</span>
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {COLOR_PRESETS.slice(0, 6).map((preset) => (
-              <button
-                key={preset.id}
-                onClick={() => setSelectedPreset(preset)}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold shrink-0 transition-all flex items-center space-x-2 ${
-                  selectedPreset.id === preset.id
-                    ? 'border-teal-400 bg-teal-500/20 text-teal-300 shadow-glow-teal'
-                    : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
-                }`}
-              >
-                <div
-                  className={`w-3.5 h-3.5 rounded-full border border-white/20 ${
-                    preset.type === 'transparent' ? 'bg-transparency-grid' : ''
-                  }`}
-                  style={{
-                    backgroundColor: preset.type === 'color' ? preset.value : undefined,
-                  }}
-                />
-                <span>{preset.name}</span>
-              </button>
-            ))}
-          </div>
+        {/* Mode Selector Tabs */}
+        <div className="flex items-center space-x-2 border-b border-white/10 pb-4">
+          <button
+            onClick={() => setBatchMode('marketplace')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-2 transition-all ${
+              batchMode === 'marketplace'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-glow-teal'
+                : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            <span>E-Commerce Marketplace Compliance</span>
+          </button>
+          <button
+            onClick={() => setBatchMode('backdrop')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-2 transition-all ${
+              batchMode === 'backdrop'
+                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-glow-teal'
+                : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Custom Studio Backdrop</span>
+          </button>
         </div>
+
+        {/* Global Preset Selector for Batch */}
+        {batchMode === 'marketplace' ? (
+          <div className="space-y-4 p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span className="font-semibold text-slate-300">
+                Choose Marketplace Standardization Preset:
+              </span>
+              <span className="text-teal-300 font-mono font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+                {selectedMarketplacePreset.badge} ({selectedMarketplacePreset.width}×{selectedMarketplacePreset.height}px)
+              </span>
+            </div>
+
+            {/* Presets Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {MARKETPLACE_PRESETS.map((preset) => {
+                const isSelected = selectedMarketplacePreset.id === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleMarketplacePresetSelect(preset)}
+                    className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-teal-400 bg-teal-500/20 text-teal-200 shadow-glow-teal'
+                        : 'border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-bold text-white truncate">
+                        {preset.name.split(' ')[0]}
+                      </span>
+                      {isSelected && (
+                        <Check className="w-3 h-3 text-teal-400 stroke-[3]" />
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono mt-1">
+                      {preset.aspectRatio} • {preset.fillPercentage}%
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Compliance Fine-Tuning */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-white/10">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-300 font-medium">Uniform Frame Fill:</span>
+                  <span className="text-teal-400 font-bold font-mono">{fillPercentage}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="100"
+                  step="1"
+                  value={fillPercentage}
+                  onChange={(e) => setFillPercentage(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+                <div className="flex gap-1.5">
+                  {FILL_PRESET_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setFillPercentage(opt.value)}
+                      className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${
+                        fillPercentage === opt.value
+                          ? 'bg-teal-500/30 text-teal-300 border border-teal-400'
+                          : 'bg-white/5 border border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {opt.value}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-white block">Auto-Center Cutout Bounds</span>
+                  <span className="text-[10px] text-slate-400 block">Centers product optically on each canvas</span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoCenter}
+                  onClick={() => setAutoCenter(!autoCenter)}
+                  className={`w-10 h-5 rounded-full transition-colors relative p-0.5 ${
+                    autoCenter ? 'bg-teal-500 shadow-glow-teal' : 'bg-slate-800'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                      autoCenter ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-300">
+                Apply Uniform Backdrop to Entire Batch:
+              </span>
+              <span className="text-teal-400 font-bold">{selectedPreset.name}</span>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {COLOR_PRESETS.slice(0, 6).map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => setSelectedPreset(preset)}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold shrink-0 transition-all flex items-center space-x-2 ${
+                    selectedPreset.id === preset.id
+                      ? 'border-teal-400 bg-teal-500/20 text-teal-300 shadow-glow-teal'
+                      : 'border-white/10 bg-white/5 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div
+                    className={`w-3.5 h-3.5 rounded-full border border-white/20 ${
+                      preset.type === 'transparent' ? 'bg-transparency-grid' : ''
+                    }`}
+                    style={{
+                      backgroundColor: preset.type === 'color' ? preset.value : undefined,
+                    }}
+                  />
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Empty State */}
@@ -250,7 +424,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
             Batch Queue is Empty
           </h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-            Drag and drop multiple product photos to extract backgrounds in parallel and download a unified catalog ZIP.
+            Drag and drop multiple product photos to extract backgrounds in parallel and download a unified, marketplace-compliant catalog ZIP.
           </p>
           <span className="inline-block mt-2 px-5 py-2.5 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-950 text-xs font-extrabold rounded-xl shadow-glow-teal">
             Select Photos
@@ -291,6 +465,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
                     </h4>
                     <span className="text-[11px] text-slate-500 font-mono">
                       {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                      {item.width && item.height && ` • ${item.width}×${item.height}px`}
                     </span>
                   </div>
                 </div>
@@ -313,7 +488,7 @@ export const BatchQueue: React.FC<BatchQueueProps> = ({ onOpenUpgradeModal }) =>
                   {item.status === 'done' && (
                     <span className="inline-flex items-center space-x-1 text-xs text-teal-300 bg-teal-500/20 border border-teal-500/30 px-3 py-1 rounded-full">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Done</span>
+                      <span>Standardized</span>
                     </span>
                   )}
 

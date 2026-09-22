@@ -1,6 +1,11 @@
 'use client';
 
 import { BackgroundPreset } from '../constants/presets';
+import { 
+  calculateCutoutBoundingBox, 
+  calculateSmartPaddingTransform, 
+  SmartPaddingOptions 
+} from './smartPadding';
 
 export interface ShadowSettings {
   enabled: boolean;
@@ -19,6 +24,7 @@ export interface RenderOptions {
   blurOriginalBg: number; // 0 to 30
   width: number;
   height: number;
+  smartPadding?: SmartPaddingOptions;
 }
 
 export async function renderCompositedCanvas(
@@ -81,6 +87,24 @@ export async function renderCompositedCanvas(
   // 2. Render Cutout Subject (with Drop Shadow if enabled)
   const cutoutImg = await loadImage(cutoutUrl);
 
+  let drawX = 0;
+  let drawY = 0;
+  let drawWidth = width;
+  let drawHeight = height;
+
+  if (options.smartPadding && options.smartPadding.enabled) {
+    const bbox = await calculateCutoutBoundingBox(cutoutImg);
+    const transform = calculateSmartPaddingTransform(bbox, {
+      ...options.smartPadding,
+      canvasWidth: width,
+      canvasHeight: height,
+    });
+    drawX = transform.drawX;
+    drawY = transform.drawY;
+    drawWidth = transform.drawWidth;
+    drawHeight = transform.drawHeight;
+  }
+
   if (shadow.enabled) {
     ctx.save();
     const rad = (shadow.angle * Math.PI) / 180;
@@ -98,10 +122,10 @@ export async function renderCompositedCanvas(
     ctx.shadowOffsetX = offsetX;
     ctx.shadowOffsetY = offsetY;
 
-    ctx.drawImage(cutoutImg, 0, 0, width, height);
+    ctx.drawImage(cutoutImg, drawX, drawY, drawWidth, drawHeight);
     ctx.restore();
   } else {
-    ctx.drawImage(cutoutImg, 0, 0, width, height);
+    ctx.drawImage(cutoutImg, drawX, drawY, drawWidth, drawHeight);
   }
 
   return canvas;

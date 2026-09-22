@@ -6,11 +6,21 @@ import {
   Download, 
   Sparkles, 
   X, 
-  Layers 
+  Layers,
+  ShoppingBag,
+  Check,
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 import { deductCredit, getStoredUserState } from '@/lib/store/userStore';
 import { BackgroundPreset } from '@/lib/constants/presets';
 import { ShadowSettings, renderCompositedCanvas } from '@/lib/engine/shadowRenderer';
+import { 
+  MarketplacePreset, 
+  MARKETPLACE_PRESETS 
+} from '@/lib/constants/marketplaces';
+import { SmartPaddingOptions } from '@/lib/engine/smartPadding';
+import { StudioMarketplaceState } from './MarketplaceControls';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -24,6 +34,7 @@ interface ExportModalProps {
   height: number;
   filename?: string;
   onOpenUpgradeModal: () => void;
+  marketplaceState?: StudioMarketplaceState;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -38,15 +49,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   height,
   filename = 'clearcut-image',
   onOpenUpgradeModal,
+  marketplaceState,
 }) => {
+  const [exportTab, setExportTab] = useState<'studio' | 'marketplace'>(
+    marketplaceState?.enabled ? 'marketplace' : 'studio'
+  );
   const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>('png');
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedMarketplacePreset, setSelectedMarketplacePreset] = useState<MarketplacePreset>(
+    MARKETPLACE_PRESETS.find(p => p.id === marketplaceState?.activePresetId) || MARKETPLACE_PRESETS[0]
+  );
+
   const userState = getStoredUserState();
   const credits = userState.credits;
 
   if (!isOpen) return null;
 
-  const triggerDownload = async (isHighRes: boolean) => {
+  const triggerDownload = async (isHighRes: boolean, customPreset?: MarketplacePreset) => {
     setIsExporting(true);
 
     try {
@@ -60,19 +79,53 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
 
       const scale = isHighRes ? 1 : 0.5;
-      const targetW = Math.round(width * scale);
-      const targetH = Math.round(height * scale);
+      const presetToUse = customPreset || (exportTab === 'marketplace' ? selectedMarketplacePreset : null);
+
+      let targetW = Math.round(width * scale);
+      let targetH = Math.round(height * scale);
+      let activeBg = background;
+      let activeShadow = shadow;
+      let smartPaddingOptions: SmartPaddingOptions | undefined = marketplaceState?.enabled ? { ...marketplaceState } : undefined;
+
+      if (presetToUse) {
+        targetW = Math.round(presetToUse.width * scale);
+        targetH = Math.round(presetToUse.height * scale);
+        activeBg = {
+          id: `export-${presetToUse.id}`,
+          name: presetToUse.name,
+          type: 'color',
+          value: presetToUse.backgroundColor,
+          previewBg: presetToUse.backgroundColor,
+        };
+        activeShadow = presetToUse.shadow;
+        smartPaddingOptions = {
+          enabled: true,
+          fillPercentage: presetToUse.fillPercentage,
+          autoCenter: true,
+          canvasWidth: targetW,
+          canvasHeight: targetH,
+        };
+      } else if (smartPaddingOptions) {
+        targetW = Math.round((marketplaceState?.canvasWidth || width) * scale);
+        targetH = Math.round((marketplaceState?.canvasHeight || height) * scale);
+        smartPaddingOptions = {
+          ...smartPaddingOptions,
+          canvasWidth: targetW,
+          canvasHeight: targetH,
+        };
+      }
 
       const canvas = await renderCompositedCanvas({
         cutoutUrl,
         originalUrl,
-        background: format === 'jpg' && background.type === 'transparent'
+        background: format === 'jpg' && activeBg.type === 'transparent'
           ? { id: 'white', name: 'White', type: 'color', value: '#ffffff', previewBg: '#ffffff' }
-          : background,
-        shadow,
-        blurOriginalBg,
+          : activeBg,
+        shadow: activeShadow,
+        blurOriginalBg: presetToUse ? 0 : blurOriginalBg,
         width: targetW,
         height: targetH,
+        smartPadding: smartPaddingOptions,
       });
 
       const mimeType = format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
@@ -81,7 +134,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = `${filename.replace(/\.[^/.]+$/, '')}-${isHighRes ? '4k-hd' : 'preview'}.${ext}`;
+      const tag = presetToUse 
+        ? `-${presetToUse.platform}-compliant` 
+        : (marketplaceState?.enabled ? '-smart-padded' : '');
+      a.download = `${filename.replace(/\.[^/.]+$/, '')}${tag}-${isHighRes ? 'hd' : 'preview'}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -101,11 +157,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
+  const currentExportW = exportTab === 'marketplace'
+    ? selectedMarketplacePreset.width
+    : (marketplaceState?.enabled ? marketplaceState.canvasWidth : width);
+  const currentExportH = exportTab === 'marketplace'
+    ? selectedMarketplacePreset.height
+    : (marketplaceState?.enabled ? marketplaceState.canvasHeight : height);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
       <div className="relative w-full max-w-lg bg-studio-950 text-white rounded-3xl shadow-dark-elevated border border-white/15 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-white/5">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-500 text-slate-950 flex items-center justify-center shadow-glow-teal">
               <Download className="w-5 h-5 stroke-[2.5]" />
@@ -115,7 +178,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 Export Photo Studio Asset
               </h3>
               <p className="text-xs text-slate-400">
-                Choose format and export resolution
+                Marketplace auto-compliance or custom high-res export
               </p>
             </div>
           </div>
@@ -129,8 +192,84 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
+        {/* Export Mode Tabs */}
+        <div className="px-6 pt-4 pb-1">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold">
+            <button
+              onClick={() => setExportTab('marketplace')}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center space-x-2 ${
+                exportTab === 'marketplace'
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-glow-teal'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>1-Click Marketplace</span>
+            </button>
+            <button
+              onClick={() => setExportTab('studio')}
+              className={`py-2 rounded-xl transition-all flex items-center justify-center space-x-2 ${
+                exportTab === 'studio'
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-glow-teal'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>Current Studio Shot</span>
+            </button>
+          </div>
+        </div>
+
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Marketplace Presets Selector */}
+          {exportTab === 'marketplace' && (
+            <div className="space-y-2.5">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Select Marketplace Preset Standards
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {MARKETPLACE_PRESETS.map((preset) => {
+                  const isSelected = selectedMarketplacePreset.id === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => setSelectedMarketplacePreset(preset)}
+                      className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col space-y-1 ${
+                        isSelected
+                          ? 'border-teal-400 bg-teal-500/15 shadow-glow-teal'
+                          : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs font-bold text-white truncate">
+                          {preset.name}
+                        </span>
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-teal-400 stroke-[3]" />
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {preset.width}×{preset.height} px • {preset.fillPercentage}% Fill
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Compliance Notes Banner */}
+              <div className="p-3 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-[11px] text-slate-300 space-y-1">
+                <div className="flex items-center space-x-1.5 text-teal-300 font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+                  <span>{selectedMarketplacePreset.badge}</span>
+                </div>
+                <p className="text-slate-300">
+                  {selectedMarketplacePreset.description}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Format Selection */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-300 block">
@@ -155,7 +294,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'border-white/10 text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                JPG (Backdrop)
+                JPG (Pure White)
               </button>
               <button
                 onClick={() => setFormat('webp')}
@@ -181,30 +320,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-extrabold text-white">
-                    Full High-Resolution (HD / 4K)
+                    Full High-Resolution ({exportTab === 'marketplace' ? selectedMarketplacePreset.name : 'HD / 4K'})
                   </span>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-400 text-slate-950">
                     1 Credit
                   </span>
                 </div>
                 <span className="text-xs font-mono font-bold text-teal-300">
-                  {width} × {height} px
+                  {currentExportW} × {currentExportH} px
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                Full original sensor resolution with crisp edges, perfect for print, e-commerce stores, and billboards.
+                {exportTab === 'marketplace' 
+                  ? `Pre-calibrated to ${selectedMarketplacePreset.width}×${selectedMarketplacePreset.height}px with ${selectedMarketplacePreset.fillPercentage}% frame fill & auto-centering.`
+                  : 'Full original sensor resolution with crisp edges, perfect for print, e-commerce stores, and billboards.'}
               </p>
 
               <button
                 onClick={() => triggerDownload(true)}
                 disabled={isExporting}
-                className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-teal-400 via-teal-500 to-cyan-400 text-slate-950 text-xs font-extrabold shadow-glow-teal flex items-center justify-center space-x-2 transition-all active:scale-98"
+                className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-teal-400 via-teal-500 to-cyan-400 text-slate-950 text-xs font-extrabold shadow-glow-teal flex items-center justify-center space-x-2 transition-all active:scale-98 disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4 fill-current" />
                 <span>
-                  {credits > 0
-                    ? `Download 4K HD (Deduct 1 of ${credits} Credits)`
-                    : 'Upgrade to Download 4K HD'}
+                  {isExporting 
+                    ? 'Exporting Canvas...' 
+                    : credits > 0
+                      ? `Download 1-Click High-Res (Deduct 1 of ${credits} Credits)`
+                      : 'Upgrade to Download Full HD'}
                 </span>
               </button>
             </div>
@@ -221,17 +364,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </span>
                 </div>
                 <span className="text-xs font-mono text-slate-400">
-                  {Math.round(width / 2)} × {Math.round(height / 2)} px
+                  {Math.round(currentExportW / 2)} × {Math.round(currentExportH / 2)} px
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Quick preview resolution for mockups, social posts, and thumbnails.
+                Quick preview resolution with identical smart padding and compliance framing.
               </p>
 
               <button
                 onClick={() => triggerDownload(false)}
                 disabled={isExporting}
-                className="w-full mt-1 py-2.5 rounded-xl border border-white/15 hover:bg-white/10 text-slate-200 text-xs font-semibold transition-all"
+                className="w-full mt-1 py-2.5 rounded-xl border border-white/15 hover:bg-white/10 text-slate-200 text-xs font-semibold transition-all disabled:opacity-50"
               >
                 Download Free Web Preview
               </button>

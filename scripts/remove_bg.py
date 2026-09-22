@@ -7,17 +7,25 @@ from PIL import Image
 from rembg import remove, new_session
 
 session = None
+current_model_name = None
 
-def get_session():
-    global session
-    if session is None:
-        session = new_session('u2net')
+def get_session(model_name='isnet-general-use'):
+    global session, current_model_name
+    if session is None or current_model_name != model_name:
+        providers = ['CPUExecutionProvider']
+        try:
+            session = new_session(model_name, providers=providers)
+            current_model_name = model_name
+        except Exception as e:
+            print(f"Warning: Failed to load {model_name} ({e}), falling back to u2net", file=sys.stderr)
+            session = new_session('u2net', providers=providers)
+            current_model_name = 'u2net'
     return session
 
 def refine_edges(
     rgba_img: Image.Image,
     defringe_amount: int = 2,
-    edge_shift: int = -1,
+    edge_shift: int = 0,
     edge_feather: float = 0.5
 ) -> Image.Image:
     """
@@ -49,11 +57,12 @@ def refine_edges(
             alpha = cv2.GaussianBlur(alpha, (k_size, k_size), edge_feather)
 
     # 3. Color Decontamination / Defringing
-    # Inpaints true hair color into semi-transparent boundary pixels
+    # Inpaints color only into thin background halos (low alpha threshold < 50),
+    # preserving internal fur textures, ears, and subject details without smearing.
     if defringe_amount > 0:
-        fringe_mask = ((alpha > 0) & (alpha < 240)).astype(np.uint8) * 255
+        fringe_mask = ((alpha > 0) & (alpha < 50)).astype(np.uint8) * 255
         if np.sum(fringe_mask) > 0:
-            rgb = cv2.inpaint(rgb, fringe_mask, inpaintRadius=max(1, defringe_amount), flags=cv2.INPAINT_TELEA)
+            rgb = cv2.inpaint(rgb, fringe_mask, inpaintRadius=min(2, defringe_amount), flags=cv2.INPAINT_TELEA)
 
     result_np = np.dstack((rgb, alpha))
     return Image.fromarray(result_np)
@@ -62,11 +71,12 @@ def process_image(
     input_path: str,
     output_path: str,
     defringe: int = 2,
-    shift: int = -1,
+    shift: int = 0,
     feather: float = 0.5,
-    alpha_matting: bool = False
+    alpha_matting: bool = False,
+    model: str = 'isnet-general-use'
 ):
-    sess = get_session()
+    sess = get_session(model)
     with open(input_path, 'rb') as f:
         inp = f.read()
 
@@ -79,10 +89,10 @@ def process_image(
             alpha_matting_foreground_threshold=240,
             alpha_matting_background_threshold=15,
             alpha_matting_erode_size=10,
-            post_process_mask=True
+            post_process_mask=False
         )
     else:
-        output_bytes = remove(inp, session=sess, post_process_mask=True)
+        output_bytes = remove(inp, session=sess, post_process_mask=False)
 
     # 2. Load into PIL
     import io
@@ -103,8 +113,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input', help='Input image path')
     parser.add_argument('output', help='Output image path')
+    parser.add_argument('--model', default='isnet-general-use', help='Rembg segmentation model (isnet-general-use, u2net, etc.)')
     parser.add_argument('--defringe', type=int, default=2, help='Defringe color radius (0 to 5)')
-    parser.add_argument('--shift', type=int, default=-1, help='Edge shift / choke in pixels (-5 to 5)')
+    parser.add_argument('--shift', type=int, default=0, help='Edge shift / choke in pixels (-5 to 5)')
     parser.add_argument('--feather', type=float, default=0.5, help='Edge feather radius (0 to 5)')
     parser.add_argument('--alpha-matting', action='store_true', help='Enable PyMatting alpha matting')
 
@@ -115,5 +126,6 @@ if __name__ == '__main__':
         defringe=args.defringe,
         shift=args.shift,
         feather=args.feather,
-        alpha_matting=args.alpha_matting
+        alpha_matting=args.alpha_matting,
+        model=args.model
     )

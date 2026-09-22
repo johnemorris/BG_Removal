@@ -29,13 +29,15 @@ import { ShadowControls } from '@/components/studio/ShadowControls';
 import { BrushEditorModal } from '@/components/studio/BrushEditorModal';
 import { ExportModal } from '@/components/studio/ExportModal';
 import { HairRefineControls, HairRefineSettings } from '@/components/studio/HairRefineControls';
+import { MarketplaceControls, StudioMarketplaceState } from '@/components/studio/MarketplaceControls';
 import { removeBackground, ProcessProgress } from '@/lib/engine/bgRemoval';
 import { BackgroundPreset, COLOR_PRESETS } from '@/lib/constants/presets';
+import { MarketplacePreset, MARKETPLACE_PRESETS } from '@/lib/constants/marketplaces';
 import { ShadowSettings } from '@/lib/engine/shadowRenderer';
 import { addHistoryItem } from '@/lib/store/userStore';
 import { openUpgradeModal } from '@/lib/store/modalStore';
 
-type StudioTool = 'backdrop' | 'hair' | 'shadow';
+type StudioTool = 'backdrop' | 'marketplace' | 'hair' | 'shadow';
 
 export default function HomePage() {
   const [imageState, setImageState] = useState<{
@@ -64,11 +66,22 @@ export default function HomePage() {
   // Hair & Fringe Refinement
   const [hairSettings, setHairSettings] = useState<HairRefineSettings>({
     defringe: 2,
-    shift: -1,
+    shift: 0,
     feather: 0.5,
     alphaMatting: false,
   });
   const [isReprocessing, setIsReprocessing] = useState(false);
+
+  // E-Commerce Marketplace & Auto-Compliance Framing
+  const [marketplaceState, setMarketplaceState] = useState<StudioMarketplaceState>({
+    enabled: false,
+    activePresetId: null,
+    fillPercentage: 85,
+    autoCenter: true,
+    canvasWidth: 2000,
+    canvasHeight: 2000,
+    aspectRatio: '1:1',
+  });
 
   // Modals
   const [brushModalOpen, setBrushModalOpen] = useState(false);
@@ -121,6 +134,28 @@ export default function HomePage() {
       distance: 14,
       color: '#000000',
     });
+    setMarketplaceState({
+      enabled: false,
+      activePresetId: null,
+      fillPercentage: 85,
+      autoCenter: true,
+      canvasWidth: 2000,
+      canvasHeight: 2000,
+      aspectRatio: '1:1',
+    });
+  };
+
+  const handleApplyMarketplacePreset = (preset: MarketplacePreset) => {
+    setSelectedBg({
+      id: `bg-${preset.id}`,
+      name: `${preset.name} Standard`,
+      type: 'color',
+      value: preset.backgroundColor,
+      previewBg: preset.backgroundColor,
+      eCommerceBadge: preset.badge,
+    });
+    setBlurOriginalBg(0);
+    setShadow(preset.shadow);
   };
 
   const handleApplyHairRefinement = async () => {
@@ -273,6 +308,19 @@ export default function HomePage() {
               </button>
 
               <button
+                onClick={() => setActiveTool(activeTool === 'marketplace' ? null : 'marketplace')}
+                className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl text-[11px] font-semibold transition-all group ${
+                  activeTool === 'marketplace'
+                    ? 'bg-gradient-to-b from-teal-400/20 to-cyan-500/10 text-teal-300 border border-teal-400/40 shadow-glow-teal'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+                }`}
+                title="Marketplace & Compliance"
+              >
+                <ShoppingBag className={`w-5 h-5 mb-1 transition-transform group-hover:scale-110 ${activeTool === 'marketplace' ? 'text-teal-300' : 'text-slate-400'}`} />
+                <span>Market</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTool(activeTool === 'hair' ? null : 'hair')}
                 className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl text-[11px] font-semibold transition-all group ${
                   activeTool === 'hair'
@@ -316,10 +364,12 @@ export default function HomePage() {
                 <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
                   <div className="flex items-center space-x-2">
                     {activeTool === 'backdrop' && <Palette className="w-4 h-4 text-teal-400" />}
+                    {activeTool === 'marketplace' && <ShoppingBag className="w-4 h-4 text-teal-400" />}
                     {activeTool === 'hair' && <Scissors className="w-4 h-4 text-teal-400" />}
                     {activeTool === 'shadow' && <Sliders className="w-4 h-4 text-teal-400" />}
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
                       {activeTool === 'backdrop' && 'Backdrop Settings'}
+                      {activeTool === 'marketplace' && 'Marketplace Compliance & Framing'}
                       {activeTool === 'hair' && 'Hair & Edge Refinement'}
                       {activeTool === 'shadow' && 'Studio Drop Shadow'}
                     </span>
@@ -342,6 +392,16 @@ export default function HomePage() {
                       blurOriginalBg={blurOriginalBg}
                       onChangeBlurBg={setBlurOriginalBg}
                       hasOriginalImage={!!imageState.originalUrl}
+                    />
+                  )}
+
+                  {activeTool === 'marketplace' && (
+                    <MarketplaceControls
+                      marketplaceState={marketplaceState}
+                      onChangeMarketplaceState={setMarketplaceState}
+                      onApplyPreset={handleApplyMarketplacePreset}
+                      currentBg={selectedBg}
+                      currentShadow={shadow}
                     />
                   )}
 
@@ -374,6 +434,8 @@ export default function HomePage() {
                 activeBackgroundStyle={bgStyle}
                 activeBackgroundClass={bgClass}
                 shadowStyle={shadowStyle}
+                smartPadding={marketplaceState.enabled ? marketplaceState : undefined}
+                badgeLabel={marketplaceState.enabled ? (MARKETPLACE_PRESETS.find(p => p.id === marketplaceState.activePresetId)?.badge || 'Smart Framing') : undefined}
               />
             </div>
           </div>
@@ -400,6 +462,7 @@ export default function HomePage() {
             height={imageState.height}
             filename={imageState.name}
             onOpenUpgradeModal={() => openUpgradeModal('pro')}
+            marketplaceState={marketplaceState}
           />
         </section>
       ) : (

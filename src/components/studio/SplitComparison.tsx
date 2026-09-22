@@ -5,10 +5,18 @@ import {
   MoveHorizontal, 
   ZoomIn, 
   ZoomOut, 
-  RotateCcw 
+  RotateCcw,
+  Square,
+  Eye
 } from 'lucide-react';
+import { 
+  CutoutBoundingBox, 
+  SmartPaddingOptions, 
+  calculateCutoutBoundingBox, 
+  calculateSmartPaddingTransform 
+} from '@/lib/engine/smartPadding';
 
-interface SplitComparisonProps {
+export interface SplitComparisonProps {
   originalUrl: string;
   processedUrl: string;
   width?: number;
@@ -16,6 +24,8 @@ interface SplitComparisonProps {
   activeBackgroundStyle?: React.CSSProperties;
   activeBackgroundClass?: string;
   shadowStyle?: React.CSSProperties;
+  smartPadding?: SmartPaddingOptions;
+  badgeLabel?: string;
 }
 
 export const SplitComparison: React.FC<SplitComparisonProps> = ({
@@ -24,27 +34,64 @@ export const SplitComparison: React.FC<SplitComparisonProps> = ({
   activeBackgroundStyle = {},
   activeBackgroundClass = 'bg-transparency-grid',
   shadowStyle = {},
+  smartPadding,
+  badgeLabel,
 }) => {
   const [sliderPos, setSliderPos] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'split' | 'cutout' | 'original'>('split');
   const [zoom, setZoom] = useState(1);
-  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const [showGuide, setShowGuide] = useState(true);
+  const [bbox, setBbox] = useState<CutoutBoundingBox | null>(null);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (smartPadding?.enabled && processedUrl) {
+      calculateCutoutBoundingBox(processedUrl)
+        .then(setBbox)
+        .catch(err => console.error('Failed to calculate bounding box:', err));
+    }
+  }, [smartPadding?.enabled, processedUrl]);
+
+  const paddingTransform = (bbox && smartPadding?.enabled)
+    ? calculateSmartPaddingTransform(bbox, smartPadding)
+    : null;
+
+  useEffect(() => {
     if (!containerRef.current) return;
-    const updateWidth = () => {
+    const updateSize = () => {
       if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
+        setViewportSize({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
       }
     };
-    updateWidth();
+    updateSize();
 
-    const ro = new ResizeObserver(updateWidth);
+    const ro = new ResizeObserver(updateSize);
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
+
+  const targetAspect = (smartPadding?.enabled && smartPadding.canvasWidth && smartPadding.canvasHeight)
+    ? smartPadding.canvasWidth / smartPadding.canvasHeight
+    : 1;
+
+  let frameWidth = 0;
+  let frameHeight = 0;
+  if (viewportSize.width > 0 && viewportSize.height > 0) {
+    const availW = Math.max(100, viewportSize.width - 48);
+    const availH = Math.max(100, viewportSize.height - 48);
+    if (availW / availH > targetAspect) {
+      frameHeight = Math.min(availH, 650);
+      frameWidth = Math.round(frameHeight * targetAspect);
+    } else {
+      frameWidth = Math.min(availW, 650);
+      frameHeight = Math.round(frameWidth / targetAspect);
+    }
+  }
 
   const handlePointerMove = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -133,6 +180,29 @@ export const SplitComparison: React.FC<SplitComparisonProps> = ({
           </button>
         </div>
 
+        {/* Marketplace & Safe Zone Controls */}
+        {smartPadding?.enabled && (
+          <div className="flex items-center space-x-2 border-l border-white/10 pl-3">
+            {badgeLabel && (
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono hidden sm:inline-block">
+                {badgeLabel}
+              </span>
+            )}
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center space-x-1.5 transition-all ${
+                showGuide 
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-glow-teal' 
+                  : 'text-slate-400 hover:text-white bg-white/5 border border-white/10'
+              }`}
+              title="Toggle safe zone guide frame"
+            >
+              <Square className="w-3 h-3" />
+              <span>Safe Zone ({smartPadding.fillPercentage}%)</span>
+            </button>
+          </div>
+        )}
+
         {/* Zoom Controls */}
         <div className="flex items-center space-x-1.5 bg-white/5 border border-white/10 rounded-xl p-0.5">
           <button
@@ -179,21 +249,60 @@ export const SplitComparison: React.FC<SplitComparisonProps> = ({
           className={`absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden p-4 ${activeBackgroundClass}`}
           style={activeBackgroundStyle}
         >
-          <div
-            className="relative transition-transform duration-100 ease-out w-full h-full flex items-center justify-center pointer-events-none"
-            style={{ transform: `scale(${zoom})` }}
-          >
-            <img
-              src={processedUrl}
-              alt="Cutout Foreground"
-              className="max-h-full max-w-full w-auto h-auto object-contain pointer-events-none select-none"
-              style={shadowStyle}
-              draggable={false}
-            />
-          </div>
+          {paddingTransform && smartPadding?.enabled && frameWidth > 0 ? (
+            <div
+              className="relative transition-transform duration-100 ease-out flex items-center justify-center pointer-events-none shadow-2xl border border-white/20 rounded-2xl overflow-hidden bg-white/5"
+              style={{
+                width: `${frameWidth}px`,
+                height: `${frameHeight}px`,
+                transform: `scale(${zoom})`,
+              }}
+            >
+              <img
+                src={processedUrl}
+                alt="Cutout Foreground"
+                className="absolute pointer-events-none select-none max-w-none"
+                style={{
+                  left: `${(paddingTransform.drawX / smartPadding.canvasWidth) * 100}%`,
+                  top: `${(paddingTransform.drawY / smartPadding.canvasHeight) * 100}%`,
+                  width: `${(paddingTransform.drawWidth / smartPadding.canvasWidth) * 100}%`,
+                  height: `${(paddingTransform.drawHeight / smartPadding.canvasHeight) * 100}%`,
+                  ...shadowStyle,
+                }}
+                draggable={false}
+              />
+
+              {showGuide && (
+                <div
+                  className="absolute border-2 border-dashed border-teal-400/50 rounded pointer-events-none flex items-start justify-start p-1.5"
+                  style={{
+                    width: `${smartPadding.fillPercentage}%`,
+                    height: `${smartPadding.fillPercentage}%`,
+                  }}
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-slate-950/80 text-[9px] font-mono text-teal-300 border border-teal-500/30">
+                    {smartPadding.fillPercentage}% Subject Box
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="relative transition-transform duration-100 ease-out w-full h-full flex items-center justify-center pointer-events-none"
+              style={{ transform: `scale(${zoom})` }}
+            >
+              <img
+                src={processedUrl}
+                alt="Cutout Foreground"
+                className="max-h-full max-w-full w-auto h-auto object-contain pointer-events-none select-none"
+                style={shadowStyle}
+                draggable={false}
+              />
+            </div>
+          )}
 
           <span className="absolute bottom-3 right-3 text-[10px] font-extrabold tracking-wider uppercase px-2.5 py-1 rounded-lg bg-teal-500/20 text-teal-300 backdrop-blur-md border border-teal-500/40 pointer-events-none z-10 shadow-glow-teal">
-            AI Cutout
+            AI Cutout {smartPadding?.enabled && `• ${smartPadding.fillPercentage}% Compliant`}
           </span>
         </div>
 
@@ -209,20 +318,44 @@ export const SplitComparison: React.FC<SplitComparisonProps> = ({
             <div
               className="absolute inset-y-0 left-0 h-full flex items-center justify-center p-4"
               style={{
-                width: containerWidth ? `${containerWidth}px` : '100%',
+                width: viewportSize.width ? `${viewportSize.width}px` : '100%',
               }}
             >
-              <div
-                className="relative transition-transform duration-100 ease-out w-full h-full flex items-center justify-center pointer-events-none"
-                style={{ transform: `scale(${zoom})` }}
-              >
-                <img
-                  src={originalUrl}
-                  alt="Original"
-                  className="max-h-full max-w-full w-auto h-auto object-contain select-none"
-                  draggable={false}
-                />
-              </div>
+              {paddingTransform && smartPadding?.enabled && frameWidth > 0 ? (
+                <div
+                  className="relative transition-transform duration-100 ease-out flex items-center justify-center pointer-events-none shadow-2xl border border-white/20 rounded-2xl overflow-hidden bg-studio-950"
+                  style={{
+                    width: `${frameWidth}px`,
+                    height: `${frameHeight}px`,
+                    transform: `scale(${zoom})`,
+                  }}
+                >
+                  <img
+                    src={originalUrl}
+                    alt="Original"
+                    className="absolute pointer-events-none select-none max-w-none"
+                    style={{
+                      left: `${(paddingTransform.drawX / smartPadding.canvasWidth) * 100}%`,
+                      top: `${(paddingTransform.drawY / smartPadding.canvasHeight) * 100}%`,
+                      width: `${(paddingTransform.drawWidth / smartPadding.canvasWidth) * 100}%`,
+                      height: `${(paddingTransform.drawHeight / smartPadding.canvasHeight) * 100}%`,
+                    }}
+                    draggable={false}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="relative transition-transform duration-100 ease-out w-full h-full flex items-center justify-center pointer-events-none"
+                  style={{ transform: `scale(${zoom})` }}
+                >
+                  <img
+                    src={originalUrl}
+                    alt="Original"
+                    className="max-h-full max-w-full w-auto h-auto object-contain select-none"
+                    draggable={false}
+                  />
+                </div>
+              )}
 
               <span className="absolute bottom-3 left-3 text-[10px] font-extrabold tracking-wider uppercase px-2.5 py-1 rounded-lg bg-slate-950/80 text-slate-300 backdrop-blur-md border border-white/10 pointer-events-none z-10">
                 Original
