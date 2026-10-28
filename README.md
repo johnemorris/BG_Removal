@@ -64,12 +64,13 @@ An enterprise-grade, privacy-first AI Background Removal SaaS product inspired b
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ (tested on Node 20 / Node 25)
-- npm or yarn
+- Node.js **24.22.1 LTS** (`.nvmrc` / `.node-version`), npm **11.19.1**.
+- Use `fnm use` or `nvm use` before running commands. The supported runtime
+  range is Node 24.22.1–24.x; Node 18/20/25 are not supported by this setup.
 
 ### Installation
 ```bash
-npm install
+npm ci
 ```
 
 ### Development Server
@@ -86,5 +87,41 @@ npm run start
 
 ### Code Quality
 ```bash
+npm test
 npm run lint
+npm run typecheck
+npm run build
+npx playwright install chromium # one-time browser provisioning
+npm run test:smoke
 ```
+
+The build and dev scripts explicitly retain Webpack through Next.js 16's
+supported `--webpack` option. The redundant custom alias was removed; TypeScript
+paths remain authoritative. Inter font assets and their OFL license are local,
+so builds no longer contact Google Fonts. No application service credentials are
+needed for the checks above.
+
+Vitest runs deterministic behavioral assertions; lint and typechecking are
+separate checks. Playwright starts its own production server on
+`127.0.0.1:3100`, so run the build first and keep that port free. It blocks
+external browser requests and mocks inference with a tiny local PNG. It requires
+no Python service, model downloads, real payments or external images. If Chrome
+is already installed, `PLAYWRIGHT_CHANNEL=chrome npm run test:smoke` avoids the
+browser download. CI should provision Playwright's version-matched Chromium
+(`npx playwright install --with-deps chromium` on Linux) before an offline run.
+Initial npm/browser provisioning and dependency advisory refreshes need network
+access; the installed tests and build do not.
+
+`RUN_PENDING_REGRESSIONS=1 npm test` deliberately enables unresolved later-phase
+regressions and exits nonzero. They are reported separately from passing coverage
+in [package 1A](docs/phase-1a.md). Unit canvas doubles are logic tests; browser
+smoke is not a segmentation benchmark or preview/export parity certification.
+The historical Python scripts are not part of `npm test`.
+
+Phase 1 records and limitations: [completion report](docs/phase-1-completion.md),
+[dependency/advisory disposition](docs/dependency-audit.md), and
+[architecture directions](docs/architecture-decisions.md). The feature and
+marketing descriptions earlier in this README describe the existing prototype,
+not verified production guarantees. Real inference still uses the existing
+Python subprocess; packaging it is Phase 3. Authentication, credits and checkout
+remain demo implementations and are not ready for public paid use.

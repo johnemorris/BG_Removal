@@ -9,11 +9,15 @@ Before making changes, read this file completely.
 # 1. Project Purpose & Architecture
 
 ClearCut AI is an AI-powered background removal and photo studio platform built with:
-- Next.js 14 (App Router)
+- Next.js 16 (App Router), React 19, Node.js 24.22.1 LTS (see `.nvmrc`)
 - TypeScript (Strict mode)
 - Tailwind CSS with custom studio utility theme
-- Client-side AI inference via `@imgly/background-removal` and WebAssembly/WebGPU
+- Existing inference via the Node API route and a per-request Python/rembg subprocess
 - High-resolution canvas compositing and shadow rendering (`src/lib/engine/shadowRenderer.ts`)
+
+Phase 1 added Vitest behavioral tests and Playwright route smoke checks. See
+`docs/phase-1a.md` for pending later-phase regressions and
+`docs/architecture-decisions.md` for recommended infrastructure that is not yet implemented.
 
 Key routes and components:
 - `/` (`src/app/page.tsx`): Main Photo Studio with Left Nav Tool Dock, Defringing, Drop Shadow, Background Presets, and Export Modal

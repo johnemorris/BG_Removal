@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import '@/styles/fonts.css';
 import '@/styles/globals.css';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { ClientAppShell } from './ClientAppShell';
-
-const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'ClearCut AI - Free AI Background Remover & Photo Studio',
@@ -24,7 +22,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.className}>
+    <html lang="en" className="clearcut-inter">
+      <head>
+        <link rel="preload" href="/fonts/e4af272ccee01ff0-s.p.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+      </head>
       <body className="min-h-screen flex flex-col bg-canvas text-structural selection:bg-teal-100 selection:text-teal-900">
         <ClientAppShell>
           {children}

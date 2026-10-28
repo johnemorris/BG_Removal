@@ -4,39 +4,46 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
-    "test": "npm run lint && tsc --noEmit"
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "playwright test",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
-    "@imgly/background-removal": "^1.7.0",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "jszip": "^3.10.2",
     "lucide-react": "^1.46.0",
-    "next": "^14.2.35",
-    "onnxruntime-web": "^1.21.0-dev.20250206-d981b153d3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/canvas-confetti": "^1.9.0",
-    "@types/jszip": "^3.4.0",
-    "@types/node": "^20.19.43",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.24",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.3",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
-  }
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
+  "engines": {
+    "node": ">=24.22.1 <25",
+    "npm": ">=11 <12"
+  },
+  "packageManager": "npm@11.19.1"
 }
